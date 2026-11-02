@@ -1,0 +1,1172 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQUEELODY: Squeektoshi's live mixtape</title>
+<meta name="description" content="Live Squeekchain hamster-wheel telemetry turned into generated music and a free SVG vinyl of every round. Runs in your browser with Web Audio.">
+<meta name="theme-color" content="#07080d">
+<meta property="og:type" content="website">
+<meta property="og:title" content="SQUEELODY: Squeektoshi's live mixtape">
+<meta property="og:description" content="The hamster wheel sets the tempo. Listen live, then press the round to a free SVG vinyl.">
+<meta property="og:image" content="og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%2307080d'/%3E%3Ccircle cx='32' cy='32' r='22' fill='none' stroke='%23ffb547' stroke-width='5'/%3E%3Cg stroke='%23ffb547' stroke-width='3'%3E%3Cpath d='M32 10v44M10 32h44M16.4 16.4l31.2 31.2M47.6 16.4 16.4 47.6'/%3E%3C/g%3E%3Ccircle cx='32' cy='32' r='6' fill='%2307080d' stroke='%23ffb547' stroke-width='3'/%3E%3C/svg%3E">
+<style>
+  /* ---------- Tokens ---------- */
+  :root {
+    color-scheme: dark;
+    /* neutrals */
+    --color-bg: #07080d;
+    --color-surface: #10131c;
+    --color-surface-raised: #171b27;
+    --color-text: #e8ecf5;
+    --color-text-muted: #a3acc2;
+    --color-focus: #ffffff;
+    /* status */
+    --color-live: #3ddc84;
+    --color-warn: #ffb547;
+    /* mood glow: set from JS (NAPPING blue, JOGGING amber, ZOOMIES orange-red) */
+    --mood-nap: #6cb8ff;
+    --mood-jog: #ffb547;
+    --mood-zoom: #ff6a3d;
+    --color-glow: var(--mood-nap);
+    --color-on-glow: #07080d;
+
+    /* type: two families, two weights, five sizes */
+    --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", "Cascadia Mono", Menlo, Consolas, "Liberation Mono", monospace;
+    --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --text-xs: 0.75rem;   /* 12px labels, footer */
+    --text-sm: 0.875rem;  /* 14px buttons, body small */
+    --text-md: 1rem;      /* 16px body, readout values */
+    --text-lg: 1.25rem;   /* 20px section headings, wide readout values */
+    --text-xl: 2rem;      /* 32px product name */
+
+    /* space */
+    --space-1: 0.25rem;
+    --space-2: 0.5rem;
+    --space-3: 0.75rem;
+    --space-4: 1rem;
+    --space-6: 1.5rem;
+    --space-8: 2rem;
+
+    --radius-sm: 8px;
+    --radius-md: 12px;
+    --radius-lg: 20px;
+    --radius-pill: 999px;
+    --ease: cubic-bezier(0.2, 0, 0, 1);
+  }
+  body[data-mood="JOGGING"] { --color-glow: var(--mood-jog); }
+  body[data-mood="ZOOMIES"] { --color-glow: var(--mood-zoom); }
+
+  /* ---------- Base ---------- */
+  *, *::before, *::after { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background:
+      radial-gradient(60rem 40rem at 20% -10%, color-mix(in oklab, var(--color-glow) 14%, transparent), transparent 70%),
+      var(--color-bg);
+    color: var(--color-text);
+    font-family: var(--font-mono);
+    font-size: var(--text-md);
+    line-height: 1.5;
+  }
+  h1, h2, p, dl, dd, ul { margin: 0; }
+  h1, h2 { line-height: 1.1; text-wrap: balance; }
+  a { color: var(--color-glow); text-underline-offset: 3px; }
+  code { font-family: var(--font-mono); font-size: 0.95em; }
+  :focus-visible { outline: 2px solid var(--color-focus); outline-offset: 3px; }
+  .visually-hidden {
+    position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+    overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+  }
+  .skip {
+    position: absolute; inset-inline-start: var(--space-4); top: -4rem;
+    background: var(--color-surface-raised); color: var(--color-text);
+    padding: var(--space-2) var(--space-4); border-radius: var(--radius-sm); z-index: 10;
+  }
+  .skip:focus { top: var(--space-2); }
+
+  /* ---------- Header ---------- */
+  .top {
+    display: flex; align-items: center; justify-content: space-between; gap: var(--space-4);
+    max-width: 90rem; margin-inline: auto;
+    padding: var(--space-4) var(--space-4) var(--space-2);
+  }
+  .brand h1 { font-size: var(--text-xl); font-weight: 700; letter-spacing: -0.02em; }
+  .brand p { font-family: var(--font-sans); font-size: var(--text-sm); color: var(--color-text-muted); }
+  .pill {
+    display: inline-flex; align-items: center; gap: var(--space-2);
+    padding: var(--space-1) var(--space-3);
+    border-radius: var(--radius-pill);
+    background: var(--color-surface-raised);
+    font-size: var(--text-xs); white-space: nowrap;
+  }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--color-text-muted); flex: none; }
+  .pill[data-state="live"] .dot { background: var(--color-live); }
+  .pill[data-state="live"] { color: var(--color-live); }
+  .pill[data-state="reconnecting"] .dot { background: var(--color-warn); }
+  .pill[data-state="reconnecting"] { color: var(--color-warn); }
+  @media (prefers-reduced-motion: no-preference) {
+    .pill[data-state="live"] .dot { animation: breathe 2.4s ease-in-out infinite; }
+  }
+  @keyframes breathe { 50% { opacity: 0.35; } }
+
+  /* ---------- Layout ---------- */
+  .layout {
+    display: grid; gap: var(--space-6);
+    max-width: 90rem; margin-inline: auto;
+    padding: var(--space-2) var(--space-4) var(--space-8);
+  }
+  @media (min-width: 60rem) {
+    .layout { grid-template-columns: minmax(0, 1.35fr) minmax(20rem, 1fr); align-items: start; }
+    .stage { position: sticky; top: var(--space-4); }
+  }
+
+  /* ---------- Stage ---------- */
+  .stage { display: grid; gap: var(--space-3); }
+  .wheel-frame {
+    position: relative;
+    aspect-ratio: 1 / 1;
+    max-height: min(68vh, 44rem);
+    width: 100%;
+    margin-inline: auto;
+    border-radius: var(--radius-lg);
+    background: radial-gradient(circle at 50% 50%, color-mix(in oklab, var(--color-glow) 10%, var(--color-surface)), var(--color-surface) 70%);
+    overflow: hidden;
+  }
+  @media (max-width: 30rem) { .wheel-frame { aspect-ratio: 6 / 5; } }
+  .wheel-frame canvas { display: block; width: 100%; height: 100%; }
+  .now {
+    font-family: var(--font-sans); font-size: var(--text-sm); color: var(--color-text-muted);
+    min-height: 1.5em; text-wrap: pretty;
+  }
+  .controls { display: grid; gap: var(--space-2); }
+  @media (min-width: 36rem) { .controls { grid-template-columns: auto auto 1fr; } }
+  .btn {
+    min-height: 48px;
+    padding: var(--space-3) var(--space-4);
+    border-radius: var(--radius-md);
+    border: 2px solid var(--color-glow);
+    background: transparent;
+    color: var(--color-text);
+    font: inherit; font-size: var(--text-sm); font-weight: 700;
+    cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2);
+    transition-property: background-color, color, border-color, scale;
+    transition-duration: 150ms;
+    transition-timing-function: var(--ease);
+    touch-action: manipulation;
+  }
+  .btn:active { scale: 0.96; }
+  @media (hover: hover) { .btn:hover { background: color-mix(in oklab, var(--color-glow) 16%, transparent); } }
+  .btn-primary { background: var(--color-glow); color: var(--color-on-glow); }
+  @media (hover: hover) { .btn-primary:hover { background: color-mix(in oklab, var(--color-glow) 85%, #fff); } }
+  .btn-primary[aria-pressed="true"] { background: transparent; color: var(--color-text); }
+  .btn svg { width: 16px; height: 16px; flex: none; }
+  .btn .when-on { display: none; }
+  .btn[aria-pressed="true"] .when-on { display: block; }
+  .btn[aria-pressed="true"] .when-off { display: none; }
+
+  /* ---------- Panel ---------- */
+  .panel { display: grid; gap: var(--space-6); min-width: 0; }
+  .section-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-3); flex-wrap: wrap; margin-block-end: var(--space-3); }
+  .section-head h2 { font-size: var(--text-lg); font-weight: 700; }
+  .section-head p { font-size: var(--text-xs); color: var(--color-text-muted); font-variant-numeric: tabular-nums; }
+  .readouts {
+    display: grid; gap: var(--space-2);
+    grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr));
+  }
+  .card {
+    background: var(--color-surface);
+    border-radius: var(--radius-md);
+    padding: var(--space-3);
+    min-width: 0;
+  }
+  .card dt { font-family: var(--font-sans); font-size: var(--text-xs); color: var(--color-text-muted); }
+  .card dd {
+    font-size: var(--text-md); font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    overflow-wrap: anywhere;
+  }
+  .card dd small { font-size: var(--text-xs); font-weight: 400; color: var(--color-text-muted); }
+  @media (min-width: 72rem) { .card dd { font-size: var(--text-lg); } }
+  .mood {
+    display: inline-flex; align-items: center; gap: var(--space-2);
+    color: var(--color-glow);
+  }
+  .mood .dot { background: var(--color-glow); }
+  [data-loading="true"] .card dd { color: var(--color-text-muted); }
+
+  .vinyl {
+    display: grid; grid-template-columns: 7.5rem 1fr; gap: var(--space-4); align-items: center;
+    background: var(--color-surface); border-radius: var(--radius-lg); padding: var(--space-4);
+  }
+  .vinyl img { width: 100%; height: auto; display: block; border-radius: 50%; }
+  .vinyl h2 { font-size: var(--text-md); font-weight: 700; margin-block-end: var(--space-1); }
+  .vinyl p { font-family: var(--font-sans); font-size: var(--text-sm); color: var(--color-text-muted); text-wrap: pretty; }
+
+  .explain ul { list-style: none; padding: 0; display: grid; gap: var(--space-3); }
+  .explain li {
+    font-family: var(--font-sans); font-size: var(--text-sm); color: var(--color-text-muted);
+    padding-inline-start: var(--space-3);
+    border-inline-start: 2px solid color-mix(in oklab, var(--color-glow) 60%, transparent);
+    text-wrap: pretty; max-width: 65ch;
+  }
+  .explain li strong { color: var(--color-text); font-family: var(--font-mono); font-weight: 700; }
+  .explain code { color: var(--color-text); }
+  .contracts { font-family: var(--font-sans); font-size: var(--text-sm); color: var(--color-text-muted); }
+  .contracts ul { list-style: none; padding: 0; display: grid; gap: var(--space-2); margin-block-start: var(--space-2); }
+  .contracts a { font-family: var(--font-mono); font-size: var(--text-xs); overflow-wrap: anywhere; }
+
+  /* ---------- Footer ---------- */
+  .foot {
+    max-width: 90rem; margin-inline: auto;
+    padding: var(--space-6) var(--space-4) var(--space-8);
+    font-family: var(--font-sans); font-size: var(--text-xs); color: var(--color-text-muted);
+    display: grid; gap: var(--space-2);
+  }
+  .foot p { max-width: 75ch; }
+</style>
+</head>
+<body data-mood="NAPPING">
+<a class="skip" href="#main">Skip to the wheel</a>
+
+<header class="top">
+  <div class="brand">
+    <h1>SQUEELODY</h1>
+    <p>Squeektoshi's live mixtape</p>
+  </div>
+  <p class="pill" id="api-pill" data-state="connecting" role="status">
+    <span class="dot" aria-hidden="true"></span><span id="api-pill-text">connecting</span>
+  </p>
+</header>
+
+<main id="main" class="layout">
+  <section class="stage" aria-labelledby="stage-title">
+    <h2 id="stage-title" class="visually-hidden">The wheel</h2>
+    <div class="wheel-frame">
+      <canvas id="wheel" role="img" aria-label="Hamster wheel, waiting for the first reading"></canvas>
+    </div>
+    <div class="controls">
+      <button class="btn btn-primary" id="btn-listen" type="button" aria-pressed="false">
+        <svg class="when-off" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5v11l9-5.5z" fill="currentColor"/></svg>
+        <svg class="when-on" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 3h3v10H4zM9 3h3v10H9z" fill="currentColor"/></svg>
+        LISTEN
+      </button>
+      <button class="btn" id="btn-poke" type="button">POKE THE HAMSTER</button>
+      <button class="btn" id="btn-press" type="button">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="8" cy="8" r="2" fill="currentColor"/></svg>
+        PRESS THIS ROUND TO VINYL
+      </button>
+    </div>
+    <p class="now" id="now" role="status">Loading the latest wheel reading. Press LISTEN to hear it.</p>
+  </section>
+
+  <div class="panel">
+    <section aria-labelledby="readout-title" id="readout" data-loading="true">
+      <div class="section-head">
+        <h2 id="readout-title">Live readout</h2>
+        <p id="updated">Waiting for data</p>
+      </div>
+      <dl class="readouts">
+        <div class="card"><dt>Wheel speed</dt><dd><span data-field="rpm">…</span> <small>RPM</small></dd></div>
+        <div class="card"><dt>Distance run</dt><dd><span data-field="km">…</span> <small>km</small></dd></div>
+        <div class="card"><dt>Mood</dt><dd><span class="mood"><span class="dot" aria-hidden="true"></span><span data-field="mood">…</span></span></dd></div>
+        <div class="card"><dt>Tempo</dt><dd><span data-field="bpm">…</span> <small>BPM</small></dd></div>
+        <div class="card"><dt>Block height</dt><dd><span data-field="block">…</span></dd></div>
+        <div class="card"><dt>Round</dt><dd><span data-field="round">…</span></dd></div>
+        <div class="card"><dt>SQK minted</dt><dd><span data-field="sqk">…</span></dd></div>
+        <div class="card"><dt>Total work units</dt><dd><span data-field="work">…</span></dd></div>
+        <div class="card"><dt>Settlements, 24h</dt><dd><span data-field="settlements">…</span></dd></div>
+      </dl>
+    </section>
+
+    <section class="vinyl" aria-labelledby="vinyl-title">
+      <img id="vinyl-preview" width="120" height="120" alt="Vinyl preview, waiting for the first reading">
+      <div>
+        <h2 id="vinyl-title">This round's vinyl</h2>
+        <p>Grooves are seeded by this round's telemetry, so every round presses a different record. It is a free SVG file: nothing is minted and no wallet is involved.</p>
+      </div>
+    </section>
+
+    <section class="explain" aria-labelledby="explain-title">
+      <div class="section-head"><h2 id="explain-title">How it reads the wheel</h2></div>
+      <ul>
+        <li><strong>Tempo</strong> follows the wheel: 40 + (<code>rpm</code> / 600)<sup>0.9</sup> × 128 BPM, up to 168. A resting wheel plays at 40 BPM.</li>
+        <li><strong>Mood</strong> comes from RPM. At 0 (or when the core reports IDLE) it is NAPPING: sparse bells and a blue glow. Below 500 it is JOGGING on A minor pentatonic. From 500 it is ZOOMIES on A major with a busier kick.</li>
+        <li><strong>Melody</strong> is picked by a seeded generator from <code>distanceMm</code> and <code>cumulativeWorkUnits</code>, so the same reading always plays the same tune.</li>
+        <li><strong>Bass</strong> root is <code>blockHeight</code> mod 8, a step on the scale, played on beats 1 and 3.</li>
+        <li><strong>Drums</strong> put a kick on steps 0, 4, 8 and 12 and hats on the offbeats; more settlements in the last 24 hours fill in more hats.</li>
+        <li><strong>Rest</strong> is respected: when Squeektoshi naps, the drums stop and the mixtape becomes a soft lullaby.</li>
+      </ul>
+    </section>
+
+    <section class="contracts" aria-labelledby="contracts-title">
+      <div class="section-head"><h2 id="contracts-title">Contracts on Sepolia</h2></div>
+      <p>Read-only links to the addresses the economy API reports. This page never connects a wallet.</p>
+      <ul id="contracts-list"><li>Waiting for data</li></ul>
+    </section>
+  </div>
+</main>
+
+<footer class="foot">
+  <p>An independent fan project, not an official Squeekchain product. Telemetry comes from <a href="https://api.squeekchain.com/v1/status">api.squeekchain.com</a>. Watch the hamster and the official livestream at <a href="https://squeekchain.com/">squeekchain.com</a>.</p>
+  <p>No wallet, no fees, no tracking. The last good reading is kept in this browser so the page still works offline.</p>
+</footer>
+
+<script>
+// @ts-check
+"use strict";
+
+/* =====================================================================
+   SQUEELODY: live Squeekchain telemetry -> Web Audio + canvas + SVG.
+   No dependencies. Sections: config, data, music mapping, audio engine,
+   wheel renderer, vinyl press, UI wiring.
+   ===================================================================== */
+
+/* ---------- Config ---------- */
+const API = "https://api.squeekchain.com/v1";
+const ENDPOINTS = {
+  status: API + "/status",
+  settlements: API + "/settlements?range=24h",
+  economy: API + "/economy/state",
+};
+const POLL_MS = 15000;
+const FETCH_TIMEOUT_MS = 10000;
+const CACHE_KEY = "squeelody:last-good:v1";
+const MOODS = /** @type {const} */ ({ NAP: "NAPPING", JOG: "JOGGING", ZOOM: "ZOOMIES" });
+const MOOD_COLORS = { NAPPING: "#6cb8ff", JOGGING: "#ffb547", ZOOMIES: "#ff6a3d" };
+const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+
+/**
+ * @typedef {{
+ *   rpm: number, speedMmPerSecond: number, distanceMm: number,
+ *   cumulativeWorkUnits: string, coreStatus: string, observedAt: string,
+ *   blockHeight: number, blockProgress: number
+ * }} StatusData
+ * @typedef {{ settlementCount: number, workAdded: number, completedBlockCount: number }} SettlementData
+ * @typedef {{ totalMintedBaseUnits: string, round: number | null,
+ *   identities: { core: string, token: string, staking: string } }} EconomyData
+ * @typedef {{ status: StatusData | null, settlements: SettlementData | null, economy: EconomyData | null, savedAt: string | null }} Snapshot
+ * @typedef {"NAPPING" | "JOGGING" | "ZOOMIES"} Mood
+ * @typedef {{ mood: Mood, bpm: number, seed: number, melody: (number | null)[],
+ *   bassMidi: number, kicks: boolean[], hats: number[], lullaby: boolean }} Pattern
+ */
+
+/* ---------- Small helpers ---------- */
+/** @param {unknown} v @returns {number} */
+function num(v) {
+  const n = typeof v === "number" ? v : typeof v === "string" && v.trim() !== "" ? Number(v) : NaN;
+  if (!Number.isFinite(n)) throw new Error("Expected a number, got " + String(v));
+  return n;
+}
+/** @param {unknown} v @returns {string} integer string */
+function intString(v) {
+  const s = typeof v === "number" ? String(Math.trunc(v)) : String(v);
+  if (!/^\d+$/.test(s)) throw new Error("Expected an integer string, got " + s);
+  return s;
+}
+/** @param {any} obj @param {string} path */
+function pick(obj, path) {
+  return path.split(".").reduce((o, k) => (o == null ? undefined : o[k]), obj);
+}
+const fmtInt = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
+/** @param {number} n @param {number} digits */
+function fmtFixed(n, digits) {
+  return new Intl.NumberFormat("en-US", { minimumFractionDigits: digits, maximumFractionDigits: digits }).format(n);
+}
+/** Base units (18 decimals) -> "27,092,772.85" without float loss. @param {string} base */
+function formatSqk(base) {
+  const b = BigInt(base);
+  const unit = 10n ** 18n;
+  const whole = b / unit;
+  const cents = ((b % unit) * 100n) / unit;
+  return whole.toLocaleString("en-US") + "." + cents.toString().padStart(2, "0");
+}
+/** @param {number} a @param {number} lo @param {number} hi */
+const clamp = (a, lo, hi) => Math.min(hi, Math.max(lo, a));
+
+/** xmur3 string hash -> 32-bit seed. @param {string} str */
+function hashSeed(str) {
+  let h = 1779033703 ^ str.length;
+  for (let i = 0; i < str.length; i++) {
+    h = Math.imul(h ^ str.charCodeAt(i), 3432918353);
+    h = (h << 13) | (h >>> 19);
+  }
+  h = Math.imul(h ^ (h >>> 16), 2246822507);
+  h = Math.imul(h ^ (h >>> 13), 3266489909);
+  return (h ^= h >>> 16) >>> 0;
+}
+/** mulberry32 PRNG. @param {number} seed @returns {() => number} */
+function mulberry32(seed) {
+  let a = seed >>> 0;
+  return function () {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/* ---------- Data: parse each endpoint strictly ---------- */
+/** @param {any} j @returns {StatusData} */
+function parseStatus(j) {
+  const m = j && j.measurement;
+  const a = pick(j, "builder.anchor");
+  if (!m || !a) throw new Error("status: missing measurement or builder.anchor");
+  return {
+    rpm: num(m.rpmMilli) / 1000,
+    speedMmPerSecond: num(m.speedMmPerSecond),
+    distanceMm: num(m.distanceMm),
+    cumulativeWorkUnits: intString(m.cumulativeWorkUnits),
+    coreStatus: String(m.coreStatus || "IDLE"),
+    observedAt: String(m.observedAt || j.generatedAt || ""),
+    blockHeight: num(a.blockHeight),
+    blockProgress: clamp(num(a.blockProgress) / 1e9, 0, 1),
+  };
+}
+/** @param {any} j @returns {SettlementData} */
+function parseSettlements(j) {
+  const s = j && j.summary;
+  if (!s) throw new Error("settlements: missing summary");
+  return {
+    settlementCount: num(s.settlementCount),
+    workAdded: num(s.workAdded),
+    completedBlockCount: num(s.completedBlockCount),
+  };
+}
+/** @param {any} j @returns {EconomyData} */
+function parseEconomy(j) {
+  const total = pick(j, "supply.totalMintedBaseUnits");
+  if (total == null) throw new Error("economy: missing supply.totalMintedBaseUnits");
+  const ids = j.identities || {};
+  const round = pick(j, "lifecycle.currentRound");
+  return {
+    totalMintedBaseUnits: intString(total),
+    round: round == null ? null : num(round),
+    identities: {
+      core: String(ids.core || ""),
+      token: String(ids.token || ""),
+      staking: String((ids.staking && (ids.staking.proxy || ids.staking)) || ""),
+    },
+  };
+}
+
+/** @param {string} url */
+async function getJson(url) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
+  try {
+    const res = await fetch(url, { signal: ctrl.signal, cache: "no-store", headers: { accept: "application/json" } });
+    if (!res.ok) throw new Error(url + " answered " + res.status);
+    return await res.json();
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** @returns {Snapshot} */
+function loadCache() {
+  try {
+    const raw = localStorage.getItem(CACHE_KEY);
+    if (raw) {
+      const c = JSON.parse(raw);
+      if (c && typeof c === "object") return { status: c.status || null, settlements: c.settlements || null, economy: c.economy || null, savedAt: c.savedAt || null };
+    }
+  } catch (_) { /* storage blocked or corrupt: start empty */ }
+  return { status: null, settlements: null, economy: null, savedAt: null };
+}
+/** @param {Snapshot} s */
+function saveCache(s) {
+  try { localStorage.setItem(CACHE_KEY, JSON.stringify(s)); } catch (_) { /* private mode: fine */ }
+}
+
+/* ---------- Music mapping (deterministic) ---------- */
+const MINOR_PENTA = [0, 3, 5, 7, 10];
+const MAJOR = [0, 2, 4, 5, 7, 9, 11];
+const MINOR_8 = [0, 2, 3, 5, 7, 8, 10, 12];  // bass roots for blockHeight mod 8
+const MAJOR_8 = [0, 2, 4, 5, 7, 9, 11, 12];
+const A3 = 57;
+
+/** @param {number} rpm */
+function tempoFor(rpm) {
+  if (!(rpm > 0)) return 40;
+  return Math.min(168, 40 + Math.pow(rpm / 600, 0.9) * 128);
+}
+/** @param {number} rpm @param {string} coreStatus @returns {Mood} */
+function moodFor(rpm, coreStatus) {
+  if (!(rpm > 0) || coreStatus === "IDLE") return MOODS.NAP;
+  return rpm >= 500 ? MOODS.ZOOM : MOODS.JOG;
+}
+
+/** @param {StatusData | null} st @param {SettlementData | null} se @returns {Pattern} */
+function buildPattern(st, se) {
+  const rpm = st ? st.rpm : 0;
+  const mood = moodFor(rpm, st ? st.coreStatus : "IDLE");
+  const lullaby = mood === MOODS.NAP;
+  const bpm = lullaby ? 40 : tempoFor(rpm);
+  const seed = hashSeed((st ? st.distanceMm : 0) + "|" + (st ? st.cumulativeWorkUnits : "0"));
+  const rnd = mulberry32(seed);
+  const scale = mood === MOODS.ZOOM ? MAJOR : MINOR_PENTA;
+  // Two octaves of the scale above A3 (A4 and up for napping bells).
+  const base = lullaby ? A3 + 12 : A3;
+  /** @type {number[]} */
+  const pool = [];
+  for (let o = 0; o < 2; o++) for (const iv of scale) pool.push(base + 12 * o + iv);
+  pool.push(base + 24);
+
+  const density = lullaby ? 0.3 : mood === MOODS.ZOOM ? 0.72 : 0.55;
+  /** @type {(number | null)[]} */
+  const melody = [];
+  let idx = Math.floor(rnd() * pool.length);
+  for (let s = 0; s < 16; s++) {
+    const onGrid = lullaby ? s % 4 === 0 : s % 2 === 0;
+    const play = rnd() < (onGrid ? density + 0.2 : density - 0.25);
+    idx = clamp(idx + Math.round((rnd() - 0.5) * 4), 0, pool.length - 1);
+    melody.push(play && (!lullaby || onGrid) ? pool[idx] : null);
+  }
+  if (!melody.some((n) => n !== null)) melody[0] = pool[idx];
+
+  const bassMidi = A3 - 12 + (mood === MOODS.ZOOM ? MAJOR_8 : MINOR_8)[(st ? st.blockHeight : 0) % 8];
+
+  const kicks = new Array(16).fill(false);
+  /** @type {number[]} hat velocity per step, 0 = silent */
+  const hats = new Array(16).fill(0);
+  if (!lullaby) {
+    for (const s of [0, 4, 8, 12]) kicks[s] = true;
+    if (mood === MOODS.ZOOM) { kicks[10] = true; kicks[14] = true; } // faster, driving kick
+    // More settlements in 24h -> more hats. ~144/day (one per 10 min) fills every offbeat.
+    const fill = clamp((se ? se.settlementCount : 0) / 144, 0.25, 1);
+    for (const s of [2, 6, 10, 14]) hats[s] = rnd() < fill + 0.15 ? 1 : 0;
+    if (fill > 0.6) for (const s of [1, 3, 5, 7, 9, 11, 13, 15]) hats[s] = rnd() < (fill - 0.6) * 1.6 ? 0.45 : 0;
+  }
+  return { mood, bpm, seed, melody, bassMidi, kicks, hats, lullaby };
+}
+
+/* ---------- Audio engine (Web Audio only) ---------- */
+/** @param {number} m */
+const midiHz = (m) => 440 * Math.pow(2, (m - 69) / 12);
+
+class Engine {
+  constructor() {
+    /** @type {AudioContext | null} */ this.ctx = null;
+    /** @type {GainNode | null} */ this.music = null;
+    /** @type {GainNode | null} */ this.fx = null;
+    /** @type {DelayNode | null} */ this.delay = null;
+    /** @type {AudioBuffer | null} */ this.noise = null;
+    /** @type {Pattern | null} */ this.pattern = null;
+    /** @type {Pattern | null} */ this.pending = null;
+    this.playing = false;
+    this.step = 0;
+    this.nextTime = 0;
+    /** @type {number} */ this.timer = 0;
+    /** times of scheduled kicks/notes for the visual pulse */
+    /** @type {number[]} */ this.pulses = [];
+  }
+
+  /** Build the graph lazily, only after a user gesture (autoplay policy). */
+  ensure() {
+    if (this.ctx) return this.ctx;
+    const AC = window.AudioContext || /** @type {any} */ (window).webkitAudioContext;
+    const ctx = /** @type {AudioContext} */ (new AC());
+    const master = ctx.createGain();
+    master.gain.value = 0.8;
+    const comp = ctx.createDynamicsCompressor();
+    comp.threshold.value = -14;
+    comp.ratio.value = 4;
+    master.connect(comp).connect(ctx.destination);
+
+    // Generated exponential-decay impulse response for the reverb.
+    const len = Math.floor(ctx.sampleRate * 2.8);
+    const ir = ctx.createBuffer(2, len, ctx.sampleRate);
+    const irRnd = mulberry32(0x5eed);
+    for (let c = 0; c < 2; c++) {
+      const d = ir.getChannelData(c);
+      for (let i = 0; i < len; i++) d[i] = (irRnd() * 2 - 1) * Math.exp(-i / (ctx.sampleRate * 0.55));
+    }
+    const verb = ctx.createConvolver();
+    verb.buffer = ir;
+    const verbReturn = ctx.createGain();
+    verbReturn.gain.value = 0.45;
+    verb.connect(verbReturn).connect(master);
+
+    // Short feedback delay, darkened on each repeat.
+    const delay = ctx.createDelay(1.5);
+    delay.delayTime.value = 0.3;
+    const feedback = ctx.createGain();
+    feedback.gain.value = 0.32;
+    const tone = ctx.createBiquadFilter();
+    tone.type = "lowpass";
+    tone.frequency.value = 2400;
+    delay.connect(tone).connect(feedback).connect(delay);
+    const delayReturn = ctx.createGain();
+    delayReturn.gain.value = 0.35;
+    tone.connect(delayReturn).connect(master);
+
+    // music bus (faded in/out by LISTEN) and fx bus (always on, for the squeak)
+    const music = ctx.createGain();
+    music.gain.value = 0;
+    const fx = ctx.createGain();
+    fx.gain.value = 1;
+    for (const bus of [music, fx]) { bus.connect(master); bus.connect(verb); }
+    music.connect(delay);
+
+    const noise = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
+    const nd = noise.getChannelData(0);
+    const nRnd = mulberry32(0x0415e);
+    for (let i = 0; i < nd.length; i++) nd[i] = nRnd() * 2 - 1;
+
+    Object.assign(this, { ctx, music, fx, delay, noise });
+    return ctx;
+  }
+
+  /** @param {Pattern} p */
+  setPattern(p) {
+    if (!this.pattern || !this.playing) this.pattern = p;
+    else this.pending = p; // swap on the next bar so phrases stay whole
+    if (this.ctx && this.delay) {
+      const sixteenth = 60 / p.bpm / 4;
+      this.delay.delayTime.setTargetAtTime(Math.min(1.4, sixteenth * 3), this.ctx.currentTime, 0.2);
+    }
+  }
+
+  async start() {
+    const ctx = this.ensure();
+    if (ctx.state !== "running") await ctx.resume();
+    if (this.playing || !this.music) return;
+    this.playing = true;
+    this.step = 0;
+    this.nextTime = ctx.currentTime + 0.08;
+    this.music.gain.cancelScheduledValues(ctx.currentTime);
+    this.music.gain.setTargetAtTime(this.pattern && this.pattern.lullaby ? 0.55 : 0.9, ctx.currentTime, 0.15);
+    this.tick();
+  }
+
+  stop() {
+    this.playing = false;
+    clearTimeout(this.timer);
+    if (this.ctx && this.music) {
+      this.music.gain.cancelScheduledValues(this.ctx.currentTime);
+      this.music.gain.setTargetAtTime(0, this.ctx.currentTime, 0.08);
+    }
+  }
+
+  /** Lookahead scheduler: wake every 40ms, schedule 16ths up to 120ms ahead. */
+  tick() {
+    const ctx = this.ctx;
+    if (!this.playing || !ctx) return;
+    while (this.nextTime < ctx.currentTime + 0.12) {
+      if (this.step === 0 && this.pending) {
+        this.pattern = this.pending;
+        this.pending = null;
+        if (this.music) this.music.gain.setTargetAtTime(this.pattern.lullaby ? 0.55 : 0.9, ctx.currentTime, 0.5);
+      }
+      const p = this.pattern;
+      if (p) {
+        this.playStep(p, this.step, this.nextTime);
+        this.nextTime += 60 / p.bpm / 4;
+      } else {
+        this.nextTime += 0.25;
+      }
+      this.step = (this.step + 1) % 16;
+    }
+    this.timer = window.setTimeout(() => this.tick(), 40);
+  }
+
+  /** @param {Pattern} p @param {number} s @param {number} t */
+  playStep(p, s, t) {
+    const sixteenth = 60 / p.bpm / 4;
+    const note = p.melody[s];
+    if (note != null) {
+      if (p.lullaby) this.bell(note, t);
+      else this.lead(note, t, sixteenth * (p.mood === MOODS.ZOOM ? 1.3 : 1.8));
+    }
+    if (s === 0 || s === 8) this.bass(p.bassMidi, t, sixteenth * (p.lullaby ? 7 : 6), p.lullaby ? 0.18 : 0.32);
+    if (p.kicks[s]) { this.kick(t); this.pulses.push(t); }
+    if (p.hats[s] > 0) this.hat(t, p.hats[s]);
+    if (this.pulses.length > 32) this.pulses.splice(0, this.pulses.length - 32);
+  }
+
+  /** @param {OscillatorType} type @param {number} hz @param {number} t @param {number} dur @param {number} peak @param {number} attack @param {AudioNode} out */
+  voice(type, hz, t, dur, peak, attack, out) {
+    const ctx = /** @type {AudioContext} */ (this.ctx);
+    const osc = ctx.createOscillator();
+    const g = ctx.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(hz, t);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(peak, t + attack);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + attack + dur);
+    osc.connect(g).connect(out);
+    osc.start(t);
+    osc.stop(t + attack + dur + 0.05);
+    return osc;
+  }
+  /** @param {number} m @param {number} t @param {number} dur */
+  lead(m, t, dur) { this.voice("triangle", midiHz(m), t, dur, 0.22, 0.006, /** @type {GainNode} */ (this.music)); }
+  /** Soft bell for the lullaby: triangle plus a quiet sine overtone, long tail. @param {number} m @param {number} t */
+  bell(m, t) {
+    const out = /** @type {GainNode} */ (this.music);
+    this.voice("triangle", midiHz(m), t, 2.6, 0.16, 0.02, out);
+    this.voice("sine", midiHz(m) * 2.01, t, 1.4, 0.05, 0.01, out);
+  }
+  /** Bass: triangle one octave under the melody register. @param {number} m @param {number} t @param {number} dur @param {number} peak */
+  bass(m, t, dur, peak) { this.voice("triangle", midiHz(m), t, dur, peak, 0.01, /** @type {GainNode} */ (this.music)); }
+  /** Kick: sine with a 150 -> 38 Hz pitch envelope. @param {number} t */
+  kick(t) {
+    const ctx = /** @type {AudioContext} */ (this.ctx);
+    const osc = ctx.createOscillator();
+    const g = ctx.createGain();
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(150, t);
+    osc.frequency.exponentialRampToValueAtTime(38, t + 0.12);
+    g.gain.setValueAtTime(0.9, t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.38);
+    osc.connect(g).connect(/** @type {GainNode} */ (this.music));
+    osc.start(t);
+    osc.stop(t + 0.4);
+  }
+  /** Hat: short high-passed noise burst. @param {number} t @param {number} vel */
+  hat(t, vel) {
+    const ctx = /** @type {AudioContext} */ (this.ctx);
+    const src = ctx.createBufferSource();
+    src.buffer = this.noise;
+    const hp = ctx.createBiquadFilter();
+    hp.type = "highpass";
+    hp.frequency.value = 7000;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.12 * vel, t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.045);
+    src.connect(hp).connect(g).connect(/** @type {GainNode} */ (this.music));
+    src.start(t, Math.random() * 0.5, 0.06);
+  }
+  /** Squeak: a quick pitch-bent high note. Plays even when the music is off. */
+  async squeak() {
+    const ctx = this.ensure();
+    if (ctx.state !== "running") await ctx.resume();
+    const t = ctx.currentTime + 0.01;
+    const osc = ctx.createOscillator();
+    const g = ctx.createGain();
+    osc.type = "triangle";
+    osc.frequency.setValueAtTime(1500, t);
+    osc.frequency.exponentialRampToValueAtTime(3100, t + 0.06);
+    osc.frequency.exponentialRampToValueAtTime(2100, t + 0.16);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.25, t + 0.012);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.2);
+    osc.connect(g).connect(/** @type {GainNode} */ (this.fx));
+    osc.start(t);
+    osc.stop(t + 0.22);
+  }
+}
+
+/* ---------- Wheel renderer (canvas, 60fps) ---------- */
+class Wheel {
+  /** @param {HTMLCanvasElement} canvas @param {Engine} engine */
+  constructor(canvas, engine) {
+    this.canvas = canvas;
+    this.g = /** @type {CanvasRenderingContext2D} */ (canvas.getContext("2d"));
+    this.engine = engine;
+    this.targetRpm = 0;
+    this.rpm = 0;
+    this.angle = 0;
+    this.progress = 0;
+    /** @type {Mood} */ this.mood = MOODS.NAP;
+    this.hop = 0;
+    this.last = performance.now();
+    /** @type {{x:number,y:number,vx:number,vy:number,life:number,max:number,size:number}[]} */
+    this.particles = [];
+    this.w = 0; this.h = 0; this.dpr = 1;
+    new ResizeObserver(() => this.resize()).observe(canvas);
+    this.resize();
+    requestAnimationFrame((t) => this.frame(t));
+  }
+  resize() {
+    const r = this.canvas.getBoundingClientRect();
+    this.dpr = Math.min(2, window.devicePixelRatio || 1);
+    this.w = Math.max(1, r.width);
+    this.h = Math.max(1, r.height);
+    this.canvas.width = Math.round(this.w * this.dpr);
+    this.canvas.height = Math.round(this.h * this.dpr);
+  }
+  poke() { this.hop = 1; }
+
+  /** @param {number} now */
+  frame(now) {
+    const dt = Math.min(0.1, (now - this.last) / 1000);
+    this.last = now;
+    const still = reducedMotion.matches;
+    // Ease the displayed RPM toward the reading so changes feel like a real wheel.
+    this.rpm += (this.targetRpm - this.rpm) * (1 - Math.exp(-dt / 1.2));
+    if (this.targetRpm === 0 && this.rpm < 0.05) this.rpm = 0;
+    if (!still) this.angle = (this.angle + (this.rpm / 60) * Math.PI * 2 * dt) % (Math.PI * 2);
+    this.hop = Math.max(0, this.hop - dt * 2.5);
+    this.draw(now / 1000, dt, still);
+    requestAnimationFrame((t) => this.frame(t));
+  }
+
+  /** @param {number} time @param {number} dt @param {boolean} still */
+  draw(time, dt, still) {
+    const { g, w, h, dpr } = this;
+    const color = MOOD_COLORS[this.mood];
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    g.clearRect(0, 0, w, h);
+    const cx = w / 2, cy = h / 2;
+    const R = Math.min(w, h) * 0.38;
+
+    // Beat pulse from the audio clock (kicks).
+    let pulse = 0;
+    const ctx = this.engine.ctx;
+    if (ctx && this.engine.playing) {
+      const now = ctx.currentTime;
+      for (const t of this.engine.pulses) if (now >= t && now - t < 0.25) pulse = Math.max(pulse, 1 - (now - t) / 0.25);
+    }
+
+    // Block progress arc around the wheel.
+    g.lineCap = "round";
+    g.lineWidth = 3;
+    g.strokeStyle = "rgba(255,255,255,0.08)";
+    g.beginPath(); g.arc(cx, cy, R * 1.14, 0, Math.PI * 2); g.stroke();
+    g.strokeStyle = color;
+    g.globalAlpha = 0.7;
+    g.beginPath(); g.arc(cx, cy, R * 1.14, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * this.progress); g.stroke();
+    g.globalAlpha = 1;
+
+    // Rim with glow.
+    g.save();
+    g.shadowColor = color;
+    g.shadowBlur = 18 + pulse * 22 + Math.min(20, this.rpm / 30);
+    g.strokeStyle = color;
+    g.lineWidth = R * 0.06;
+    g.beginPath(); g.arc(cx, cy, R, 0, Math.PI * 2); g.stroke();
+    g.lineWidth = R * 0.02;
+    g.beginPath(); g.arc(cx, cy, R * 0.9, 0, Math.PI * 2); g.stroke();
+    g.restore();
+
+    // 12 spokes, with a faint motion smear when spinning fast.
+    const speed = (this.rpm / 60) * Math.PI * 2; // rad/s
+    const smear = still ? 0 : Math.min(Math.PI / 6, speed * (1 / 60));
+    const ghosts = smear > 0.02 ? 4 : 1;
+    for (let k = ghosts - 1; k >= 0; k--) {
+      const a0 = this.angle - (smear * k) / Math.max(1, ghosts - 1);
+      g.globalAlpha = k === 0 ? 0.95 : 0.18;
+      g.strokeStyle = color;
+      g.lineWidth = Math.max(1.5, R * 0.018);
+      g.beginPath();
+      for (let i = 0; i < 12; i++) {
+        const a = a0 + (i * Math.PI) / 6;
+        g.moveTo(cx + Math.cos(a) * R * 0.2, cy + Math.sin(a) * R * 0.2);
+        g.lineTo(cx + Math.cos(a) * R * 0.9, cy + Math.sin(a) * R * 0.9);
+      }
+      g.stroke();
+    }
+    g.globalAlpha = 1;
+    // Hub
+    g.fillStyle = "#0b0d14";
+    g.strokeStyle = color;
+    g.lineWidth = 2;
+    g.beginPath(); g.arc(cx, cy, R * 0.24, 0, Math.PI * 2); g.fill(); g.stroke();
+
+    // Particles trail the rim while running.
+    if (!still && this.rpm > 1) {
+      const spawn = Math.min(60, this.rpm / 6) * dt * 6;
+      for (let i = 0; i < spawn; i++) {
+        if (this.particles.length > 260) break;
+        const a = this.angle + Math.random() * Math.PI * 2;
+        const tx = -Math.sin(a), ty = Math.cos(a);
+        const v = R * (0.15 + Math.min(1.5, this.rpm / 400)) * 0.6;
+        this.particles.push({ x: cx + Math.cos(a) * R, y: cy + Math.sin(a) * R, vx: tx * v, vy: ty * v, life: 0, max: 0.5 + Math.random() * 0.7, size: 1 + Math.random() * 2 });
+      }
+    }
+    g.fillStyle = color;
+    this.particles = this.particles.filter((p) => {
+      p.life += dt;
+      p.x += p.vx * dt; p.y += p.vy * dt;
+      p.vx *= 0.97; p.vy *= 0.97;
+      const k = 1 - p.life / p.max;
+      if (k <= 0) return false;
+      g.globalAlpha = k * 0.8;
+      g.beginPath(); g.arc(p.x, p.y, p.size, 0, Math.PI * 2); g.fill();
+      return true;
+    });
+    g.globalAlpha = 1;
+
+    // Hamster in the middle: quick bob when running, slow breathing when napping.
+    const running = this.mood !== MOODS.NAP;
+    const bob = still ? 0 : running ? Math.sin(time * (6 + this.rpm / 40)) * R * 0.035 : Math.sin(time * 1.3) * R * 0.015;
+    const hopY = Math.sin(this.hop * Math.PI) * R * 0.18;
+    g.textAlign = "center";
+    g.textBaseline = "middle";
+    g.font = Math.round(R * 0.34) + 'px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif';
+    g.fillText("\u{1F439}", cx, cy + bob - hopY);
+    if (!running) {
+      g.globalAlpha = still ? 0.8 : 0.55 + 0.35 * Math.sin(time * 1.3);
+      g.font = Math.round(R * 0.16) + 'px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif';
+      g.fillText("\u{1F4A4}", cx + R * 0.2, cy - R * 0.2 - (still ? 0 : (time * 6) % 8));
+      g.globalAlpha = 1;
+    }
+  }
+}
+
+/* ---------- Vinyl press (deterministic SVG) ---------- */
+/** @param {string} s */
+const esc = (s) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c] || c);
+
+/**
+ * @param {{ status: StatusData, round: number | null, pattern: Pattern, pressedAt: Date }} input
+ * @returns {string}
+ */
+function vinylSvg({ status, round, pattern, pressedAt }) {
+  const r = round == null ? "?" : String(round);
+  const seed = hashSeed([r, status.blockHeight, status.distanceMm, status.cumulativeWorkUnits].join("|"));
+  const rnd = mulberry32(seed);
+  const color = MOOD_COLORS[pattern.mood];
+  const cx = 200, cy = 190, outer = 178, label = 54;
+  const f = (/** @type {number} */ n) => n.toFixed(2);
+  /** @type {string[]} */
+  const parts = [];
+  // Grooves: concentric rings whose spacing, weight, brightness and gaps come from the seed.
+  const bands = 3 + Math.floor(rnd() * 4); // tracks on the side
+  const bandEdges = Array.from({ length: bands - 1 }, () => label + 14 + rnd() * (outer - label - 24)).sort((a, b) => a - b);
+  for (let rad = label + 10; rad < outer - 2; rad += 1.1 + rnd() * 1.6) {
+    if (bandEdges.some((e) => Math.abs(e - rad) < 1.8)) continue; // silent gap between tracks
+    const op = 0.12 + rnd() * 0.45;
+    const sw = 0.3 + rnd() * 0.9;
+    const tint = rnd() < 0.14 ? color : "#ffffff";
+    const dash = rnd() < 0.18 ? ` stroke-dasharray="${f(2 + rnd() * 30)} ${f(1 + rnd() * 6)}"` : "";
+    parts.push(`<circle cx="${cx}" cy="${cy}" r="${f(rad)}" fill="none" stroke="${tint}" stroke-opacity="${f(op)}" stroke-width="${f(sw)}"${dash}/>`);
+  }
+  // The round's 16-step melody as dots around the label.
+  pattern.melody.forEach((m, i) => {
+    if (m == null) return;
+    const a = -Math.PI / 2 + (i / 16) * Math.PI * 2;
+    const rr = label + 6;
+    parts.push(`<circle cx="${f(cx + Math.cos(a) * rr)}" cy="${f(cy + Math.sin(a) * rr)}" r="${f(1 + ((m - 50) / 40) * 2.2)}" fill="${color}"/>`);
+  });
+  const sheen = 20 + rnd() * 50;
+  const when = new Date(status.observedAt);
+  const stamp = (Number.isNaN(when.getTime()) ? pressedAt : when).toISOString().replace("T", " ").slice(0, 16) + " UTC";
+  const km = fmtFixed(status.distanceMm / 1e6, 3);
+  const caption = `${pattern.mood} · ${km} km · block ${status.blockHeight} · ${stamp}`;
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="400" height="400" viewBox="0 0 400 400" role="img" aria-labelledby="t d">
+<title id="t">SQUEELODY vinyl, round ${esc(r)}, block ${status.blockHeight}</title>
+<desc id="d">${esc(caption)}. Seed ${seed}.</desc>
+<defs>
+<linearGradient id="sheen" gradientTransform="rotate(${f(sheen)} .5 .5)"><stop offset="0" stop-color="#fff" stop-opacity="0"/><stop offset=".5" stop-color="#fff" stop-opacity=".09"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
+</defs>
+<rect width="400" height="400" fill="#07080d"/>
+<circle cx="${cx}" cy="${cy}" r="${outer + 4}" fill="${color}" fill-opacity=".12"/>
+<circle cx="${cx}" cy="${cy}" r="${outer}" fill="#0d0e14"/>
+${parts.join("\n")}
+<circle cx="${cx}" cy="${cy}" r="${outer}" fill="url(#sheen)"/>
+<circle cx="${cx}" cy="${cy}" r="${label}" fill="${color}"/>
+<text x="${cx}" y="${cy - 28}" text-anchor="middle" font-family="ui-monospace,Menlo,monospace" font-size="8" font-weight="700" fill="#07080d">SQUEELODY</text>
+<text x="${cx}" y="${cy - 9}" text-anchor="middle" font-family="ui-monospace,Menlo,monospace" font-size="14" font-weight="700" fill="#07080d">BLOCK ${status.blockHeight}</text>
+<text x="${cx}" y="${cy + 22}" text-anchor="middle" font-family="ui-monospace,Menlo,monospace" font-size="11" fill="#07080d">ROUND ${esc(r)}</text>
+<circle cx="${cx}" cy="${cy}" r="3.5" fill="#07080d"/>
+<text x="200" y="389" text-anchor="middle" font-family="ui-monospace,Menlo,monospace" font-size="10.5" fill="#a3acc2">${esc(caption)}</text>
+</svg>`;
+}
+
+/* ---------- UI wiring ---------- */
+const $ = (/** @type {string} */ id) => /** @type {HTMLElement} */ (document.getElementById(id));
+const engine = new Engine();
+const wheel = new Wheel(/** @type {HTMLCanvasElement} */ ($("wheel")), engine);
+/** @type {Snapshot} */
+let snap = loadCache();
+/** @type {Pattern} */
+let pattern = buildPattern(snap.status, snap.settlements);
+let lastPreviewKey = "";
+/** @type {"connecting" | "live" | "reconnecting"} */
+let apiState = "connecting";
+
+/** @param {string} field @param {string} text */
+function setField(field, text) {
+  for (const el of document.querySelectorAll(`[data-field="${field}"]`)) el.textContent = text;
+}
+
+function sayNow(/** @type {string} */ msg) { $("now").textContent = msg; }
+
+function describeMood() {
+  const st = snap.status;
+  if (!st) return "Loading the latest wheel reading. Press LISTEN to hear it.";
+  const rpm = fmtFixed(st.rpm, 1);
+  const playing = engine.playing;
+  if (pattern.mood === MOODS.NAP) {
+    return playing
+      ? "Squeektoshi is resting, so the mixtape is a soft lullaby at 40 BPM. It wakes up when the wheel does."
+      : "Squeektoshi is resting. Press LISTEN for a soft lullaby while the wheel is still.";
+  }
+  const verb = pattern.mood === MOODS.ZOOM ? "Zoomies" : "Jogging";
+  return playing
+    ? `${verb} at ${rpm} RPM. Playing ${Math.round(pattern.bpm)} BPM; the beat follows the wheel.`
+    : `${verb} at ${rpm} RPM. Press LISTEN to hear it at ${Math.round(pattern.bpm)} BPM.`;
+}
+
+function render() {
+  const st = snap.status, se = snap.settlements, ec = snap.economy;
+  $("readout").dataset.loading = st ? "false" : "true";
+  document.body.dataset.mood = pattern.mood;
+  if (st) {
+    setField("rpm", fmtFixed(st.rpm, 1));
+    setField("km", fmtFixed(st.distanceMm / 1e6, 3));
+    setField("block", fmtInt.format(st.blockHeight));
+    setField("work", BigInt(st.cumulativeWorkUnits).toLocaleString("en-US"));
+  }
+  setField("mood", st ? pattern.mood : "…");
+  setField("bpm", st ? String(Math.round(pattern.bpm)) : "…");
+  if (se) {
+    setField("settlements", fmtInt.format(se.settlementCount));
+  }
+  if (ec) {
+    setField("sqk", formatSqk(ec.totalMintedBaseUnits));
+    setField("round", ec.round == null ? "n/a" : fmtInt.format(ec.round));
+    const list = $("contracts-list");
+    const rows = /** @type {[string, string][]} */ ([["Core", ec.identities.core], ["SQK token", ec.identities.token], ["Staking", ec.identities.staking]])
+      .filter(([, a]) => /^0x[0-9a-fA-F]{40}$/.test(a));
+    if (rows.length) {
+      list.replaceChildren(...rows.map(([name, addr]) => {
+        const li = document.createElement("li");
+        const a = document.createElement("a");
+        a.href = "https://sepolia.etherscan.io/address/" + addr;
+        a.textContent = addr;
+        a.rel = "noopener";
+        li.append(name + ": ", a);
+        return li;
+      }));
+    }
+  }
+  const upd = snap.savedAt ? new Date(snap.savedAt) : null;
+  $("updated").textContent = upd
+    ? (apiState === "live" ? "Updated " : "Last good reading ") + upd.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })
+    : apiState === "reconnecting" ? "No reading yet, retrying" : "Waiting for data";
+
+  wheel.targetRpm = st ? st.rpm : 0;
+  wheel.mood = pattern.mood;
+  wheel.progress = st ? st.blockProgress : 0;
+  $("wheel").setAttribute("aria-label", st
+    ? `Hamster wheel ${pattern.mood === MOODS.NAP ? "at rest" : "spinning at " + fmtFixed(st.rpm, 1) + " RPM"}, block ${st.blockHeight} is ${Math.round(st.blockProgress * 100)}% complete`
+    : "Hamster wheel, waiting for the first reading");
+
+  // Vinyl preview of the current round.
+  const img = /** @type {HTMLImageElement} */ ($("vinyl-preview"));
+  if (st) {
+    const round = ec ? ec.round : null;
+    const key = [round, st.blockHeight, st.distanceMm, st.cumulativeWorkUnits, pattern.mood].join("|");
+    if (key !== lastPreviewKey) {
+      lastPreviewKey = key;
+      img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(vinylSvg({ status: st, round, pattern, pressedAt: new Date() }));
+      img.alt = `Vinyl preview for round ${round ?? "unknown"}, block ${st.blockHeight}, mood ${pattern.mood}`;
+    }
+  }
+  if (!transient) sayNow(describeMood());
+}
+
+/** @param {"connecting" | "live" | "reconnecting"} s */
+function setApiState(s) {
+  apiState = s;
+  const pill = $("api-pill");
+  pill.dataset.state = s;
+  $("api-pill-text").textContent = s === "live" ? "API live" : s;
+}
+
+let polling = false;
+async function poll() {
+  if (polling) return;
+  polling = true;
+  const [a, b, c] = await Promise.allSettled([
+    getJson(ENDPOINTS.status).then(parseStatus),
+    getJson(ENDPOINTS.settlements).then(parseSettlements),
+    getJson(ENDPOINTS.economy).then(parseEconomy),
+  ]);
+  polling = false;
+  // Keep last-good values for any endpoint that failed.
+  if (a.status === "fulfilled") snap.status = a.value;
+  if (b.status === "fulfilled") snap.settlements = b.value;
+  if (c.status === "fulfilled") snap.economy = c.value;
+  const allOk = a.status === "fulfilled" && b.status === "fulfilled" && c.status === "fulfilled";
+  if (a.status === "fulfilled" || b.status === "fulfilled" || c.status === "fulfilled") {
+    snap.savedAt = new Date().toISOString();
+    saveCache(snap);
+  }
+  for (const r of [a, b, c]) if (r.status === "rejected") console.warn("SQUEELODY fetch failed:", r.reason && r.reason.message);
+  setApiState(allOk ? "live" : "reconnecting");
+  pattern = buildPattern(snap.status, snap.settlements);
+  engine.setPattern(pattern);
+  render();
+}
+
+/* Transient messages (poke, press) hold the status line for a few seconds. */
+/** @type {number} */ let transientTimer = 0;
+let transient = false;
+/** @param {string} msg */
+function flash(msg) {
+  transient = true;
+  sayNow(msg);
+  clearTimeout(transientTimer);
+  transientTimer = window.setTimeout(() => { transient = false; sayNow(describeMood()); }, 5000);
+}
+
+const listenBtn = $("btn-listen");
+listenBtn.addEventListener("click", async () => {
+  if (engine.playing) {
+    engine.stop();
+    listenBtn.setAttribute("aria-pressed", "false");
+  } else {
+    try {
+      engine.setPattern(pattern);
+      await engine.start();
+      listenBtn.setAttribute("aria-pressed", "true");
+    } catch (err) {
+      flash("Unable to start audio in this browser. Check that sound is allowed for this page and try again.");
+      return;
+    }
+  }
+  transient = false;
+  sayNow(describeMood());
+});
+
+$("btn-poke").addEventListener("click", async () => {
+  wheel.poke();
+  try { await engine.squeak(); } catch (_) { /* no audio: the hop still shows */ }
+  flash("Squeak. The poke plays only on this page; the real hamster is not disturbed.");
+});
+
+$("btn-press").addEventListener("click", () => {
+  const st = snap.status;
+  if (!st) {
+    flash("No reading yet. The vinyl can be pressed once the first wheel reading loads.");
+    return;
+  }
+  const round = snap.economy ? snap.economy.round : null;
+  const svg = vinylSvg({ status: st, round, pattern, pressedAt: new Date() });
+  const url = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml" }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `squeelody-round-${round ?? "unknown"}-block-${st.blockHeight}.svg`;
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+  flash(`Pressed round ${round ?? "unknown"} at block ${st.blockHeight}. The SVG is in your downloads.`);
+});
+
+// First paint from cache (if any), then live data every 15s.
+render();
+poll();
+setInterval(poll, POLL_MS);
+window.addEventListener("online", () => poll());
+document.addEventListener("visibilitychange", () => { if (!document.hidden) poll(); });
+
+// Read-only hook for automated checks; holds no secrets.
+/** @type {any} */ (window).__squeelody = { get snap() { return snap; }, get pattern() { return pattern; }, engine, buildPattern, vinylSvg, tempoFor, moodFor };
+</script>
+</body>
+</html>

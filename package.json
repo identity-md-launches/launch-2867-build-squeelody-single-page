@@ -1,0 +1,16 @@
+{
+  "name": "squeelody",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Live Squeekchain hamster telemetry turned into generated music and a free SVG vinyl. One self-contained index.html.",
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "typecheck": "node scripts/typecheck.mjs",
+    "preview": "node scripts/preview.mjs",
+    "check": "npm run typecheck && npm run build"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3"
+  }
+}
