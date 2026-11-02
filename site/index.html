@@ -167,6 +167,7 @@
   .btn-primary { background: var(--color-glow); color: var(--color-on-glow); }
   @media (hover: hover) { .btn-primary:hover { background: color-mix(in oklab, var(--color-glow) 85%, #fff); } }
   .btn-primary[aria-pressed="true"] { background: transparent; color: var(--color-text); }
+  .btn[aria-disabled="true"] { opacity: 0.65; cursor: not-allowed; }
   .btn svg { width: 16px; height: 16px; flex: none; }
   .btn .when-on { display: none; }
   .btn[aria-pressed="true"] .when-on { display: block; }
@@ -253,7 +254,7 @@
       <canvas id="wheel" role="img" aria-label="Hamster wheel, waiting for the first reading"></canvas>
     </div>
     <div class="controls">
-      <button class="btn btn-primary" id="btn-listen" type="button" aria-pressed="false">
+      <button class="btn btn-primary" id="btn-listen" type="button" aria-pressed="false" aria-disabled="true" aria-describedby="now">
         <svg class="when-off" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5v11l9-5.5z" fill="currentColor"/></svg>
         <svg class="when-on" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 3h3v10H4zM9 3h3v10H9z" fill="currentColor"/></svg>
         LISTEN
@@ -264,7 +265,7 @@
         PRESS THIS ROUND TO VINYL
       </button>
     </div>
-    <p class="now" id="now" role="status">Loading the latest wheel reading. Press LISTEN to hear it.</p>
+    <p class="now" id="now" role="status">No wheel reading yet. Connecting; LISTEN will be available when data arrives.</p>
   </section>
 
   <div class="panel">
@@ -299,7 +300,7 @@
       <ul>
         <li><strong>Tempo</strong> follows the wheel: 40 + (<code>rpm</code> / 600)<sup>0.9</sup> × 128 BPM, up to 168. A resting wheel plays at 40 BPM.</li>
         <li><strong>Mood</strong> comes from RPM. At 0 (or when the core reports IDLE) it is NAPPING: sparse bells and a blue glow. Below 500 it is JOGGING on A minor pentatonic. From 500 it is ZOOMIES on A major with a busier kick.</li>
-        <li><strong>Melody</strong> is picked by a seeded generator from <code>distanceMm</code> and <code>cumulativeWorkUnits</code>, so the same reading always plays the same tune.</li>
+        <li><strong>Melody</strong> is seeded from <code>distanceMm</code> and <code>cumulativeWorkUnits</code> at this browser's first reading of each round. The round keeps its tune as live tempo, drums and mood voicing change.</li>
         <li><strong>Bass</strong> root is <code>blockHeight</code> mod 8, a step on the scale, played on beats 1 and 3.</li>
         <li><strong>Drums</strong> put a kick on steps 0, 4, 8 and 12 and hats on the offbeats; more settlements in the last 24 hours fill in more hats.</li>
         <li><strong>Rest</strong> is respected: when Squeektoshi naps, the drums stop and the mixtape becomes a soft lullaby.</li>
@@ -352,7 +353,10 @@ const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
  * @typedef {{ settlementCount: number, workAdded: number, completedBlockCount: number }} SettlementData
  * @typedef {{ totalMintedBaseUnits: string, round: number | null,
  *   identities: { core: string, token: string, staking: string } }} EconomyData
- * @typedef {{ status: StatusData | null, settlements: SettlementData | null, economy: EconomyData | null, savedAt: string | null }} Snapshot
+ * @typedef {{ distanceMm: number, cumulativeWorkUnits: string }} SeedReading
+ * @typedef {{ status: StatusData | null, settlements: SettlementData | null, economy: EconomyData | null,
+ *   savedAt: string | null, fetchedAt: { status: string | null, settlements: string | null, economy: string | null },
+ *   roundSeeds: Record<string, SeedReading> }} Snapshot
  * @typedef {"NAPPING" | "JOGGING" | "ZOOMIES"} Mood
  * @typedef {{ mood: Mood, bpm: number, seed: number, melody: (number | null)[],
  *   bassMidi: number, kicks: boolean[], hats: number[], lullaby: boolean }} Pattern
@@ -477,10 +481,17 @@ function loadCache() {
     const raw = localStorage.getItem(CACHE_KEY);
     if (raw) {
       const c = JSON.parse(raw);
-      if (c && typeof c === "object") return { status: c.status || null, settlements: c.settlements || null, economy: c.economy || null, savedAt: c.savedAt || null };
+      if (c && typeof c === "object") return {
+        status: c.status || null, settlements: c.settlements || null, economy: c.economy || null, savedAt: c.savedAt || null,
+        // Older caches have only an aggregate savedAt: it cannot date the wheel reliably.
+        fetchedAt: { status: c.fetchedAt?.status || c.status?.observedAt || null,
+          settlements: c.fetchedAt?.settlements || null, economy: c.fetchedAt?.economy || null },
+        roundSeeds: c.roundSeeds || {},
+      };
     }
   } catch (_) { /* storage blocked or corrupt: start empty */ }
-  return { status: null, settlements: null, economy: null, savedAt: null };
+  return { status: null, settlements: null, economy: null, savedAt: null,
+    fetchedAt: { status: null, settlements: null, economy: null }, roundSeeds: {} };
 }
 /** @param {Snapshot} s */
 function saveCache(s) {
@@ -505,13 +516,29 @@ function moodFor(rpm, coreStatus) {
   return rpm >= 500 ? MOODS.ZOOM : MOODS.JOG;
 }
 
-/** @param {StatusData | null} st @param {SettlementData | null} se @returns {Pattern} */
-function buildPattern(st, se) {
+/**
+ * The initial snapshot is the first usable wheel reading paired with a known round
+ * in this browser. Retain its distance/work seed, including across cached reloads.
+ * Mood voicing, BPM, bass and drums still follow the latest successful readings.
+ * @param {StatusData | null} st @param {SettlementData | null} se
+ * @param {number | null} round @param {Record<string, SeedReading>} seeds
+ * @returns {Pattern}
+ */
+function buildPattern(st, se, round = null, seeds = {}) {
   const rpm = st ? st.rpm : 0;
   const mood = moodFor(rpm, st ? st.coreStatus : "IDLE");
   const lullaby = mood === MOODS.NAP;
   const bpm = lullaby ? 40 : tempoFor(rpm);
-  const seed = hashSeed((st ? st.distanceMm : 0) + "|" + (st ? st.cumulativeWorkUnits : "0"));
+  let initial = st;
+  if (st && round != null) {
+    const key = String(round);
+    if (!seeds[key]) seeds[key] = { distanceMm: st.distanceMm, cumulativeWorkUnits: st.cumulativeWorkUnits };
+    // Bound the local cache to 32 rounds rather than growing localStorage forever.
+    const rounds = Object.keys(seeds);
+    if (rounds.length > 32) delete seeds[rounds.find((r) => r !== key) || rounds[0]];
+    initial = { ...st, ...seeds[key] };
+  }
+  const seed = hashSeed((initial ? initial.distanceMm : 0) + "|" + (initial ? initial.cumulativeWorkUnits : "0"));
   const rnd = mulberry32(seed);
   const scale = mood === MOODS.ZOOM ? MAJOR : MINOR_PENTA;
   // Two octaves of the scale above A3 (A4 and up for napping bells).
@@ -570,7 +597,7 @@ class Engine {
     /** @type {number[]} */ this.pulses = [];
   }
 
-  /** Build the graph lazily, only after a user gesture (autoplay policy). */
+  /** Build the graph lazily from LISTEN, the only audio opt-in (autoplay policy). */
   ensure() {
     if (this.ctx) return this.ctx;
     const AC = window.AudioContext || /** @type {any} */ (window).webkitAudioContext;
@@ -628,7 +655,10 @@ class Engine {
 
   /** @param {Pattern} p */
   setPattern(p) {
-    if (!this.pattern || !this.playing) this.pattern = p;
+    if (!this.pattern || !this.playing) {
+      this.pattern = p;
+      this.pending = null;
+    }
     else this.pending = p; // swap on the next bar so phrases stay whole
     if (this.ctx && this.delay) {
       const sixteenth = 60 / p.bpm / 4;
@@ -746,9 +776,10 @@ class Engine {
     src.connect(hp).connect(g).connect(/** @type {GainNode} */ (this.music));
     src.start(t, Math.random() * 0.5, 0.06);
   }
-  /** Squeak: a quick pitch-bent high note. Plays even when the music is off. */
+  /** Squeak after LISTEN has initialized audio; also works while music is paused. */
   async squeak() {
-    const ctx = this.ensure();
+    const ctx = this.ctx;
+    if (!ctx) return;
     if (ctx.state !== "running") await ctx.resume();
     const t = ctx.currentTime + 0.01;
     const osc = ctx.createOscillator();
@@ -982,10 +1013,12 @@ const wheel = new Wheel(/** @type {HTMLCanvasElement} */ ($("wheel")), engine);
 /** @type {Snapshot} */
 let snap = loadCache();
 /** @type {Pattern} */
-let pattern = buildPattern(snap.status, snap.settlements);
+let pattern = buildPattern(snap.status, snap.settlements, snap.economy?.round ?? null, snap.roundSeeds);
 let lastPreviewKey = "";
 /** @type {"connecting" | "live" | "reconnecting"} */
 let apiState = "connecting";
+// Cached data remains playable, but must never be labelled as a live wheel fetch.
+let statusFresh = false;
 
 /** @param {string} field @param {string} text */
 function setField(field, text) {
@@ -996,7 +1029,7 @@ function sayNow(/** @type {string} */ msg) { $("now").textContent = msg; }
 
 function describeMood() {
   const st = snap.status;
-  if (!st) return "Loading the latest wheel reading. Press LISTEN to hear it.";
+  if (!st) return `No wheel reading yet. ${apiState === "reconnecting" ? "Reconnecting" : "Connecting"}; LISTEN will be available when data arrives.`;
   const rpm = fmtFixed(st.rpm, 1);
   const playing = engine.playing;
   if (pattern.mood === MOODS.NAP) {
@@ -1013,6 +1046,7 @@ function describeMood() {
 function render() {
   const st = snap.status, se = snap.settlements, ec = snap.economy;
   $("readout").dataset.loading = st ? "false" : "true";
+  $("btn-listen").setAttribute("aria-disabled", st ? "false" : "true");
   document.body.dataset.mood = pattern.mood;
   if (st) {
     setField("rpm", fmtFixed(st.rpm, 1));
@@ -1043,9 +1077,12 @@ function render() {
       }));
     }
   }
-  const upd = snap.savedAt ? new Date(snap.savedAt) : null;
-  $("updated").textContent = upd
-    ? (apiState === "live" ? "Updated " : "Last good reading ") + upd.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })
+  const upd = snap.fetchedAt.status ? new Date(snap.fetchedAt.status) : null;
+  const hasTime = upd && !Number.isNaN(upd.getTime());
+  $("updated").textContent = st
+    ? statusFresh && hasTime
+      ? "Updated " + upd.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })
+      : "Cached wheel reading · " + (hasTime ? upd.toLocaleString([], { dateStyle: "medium", timeStyle: "medium" }) : "time unknown")
     : apiState === "reconnecting" ? "No reading yet, retrying" : "Waiting for data";
 
   wheel.targetRpm = st ? st.rpm : 0;
@@ -1082,24 +1119,24 @@ async function poll() {
   if (polling) return;
   polling = true;
   const [a, b, c] = await Promise.allSettled([
-    getJson(ENDPOINTS.status).then(parseStatus),
-    getJson(ENDPOINTS.settlements).then(parseSettlements),
-    getJson(ENDPOINTS.economy).then(parseEconomy),
+    getJson(ENDPOINTS.status).then(parseStatus).then(data => ({ data, fetchedAt: new Date().toISOString() })),
+    getJson(ENDPOINTS.settlements).then(parseSettlements).then(data => ({ data, fetchedAt: new Date().toISOString() })),
+    getJson(ENDPOINTS.economy).then(parseEconomy).then(data => ({ data, fetchedAt: new Date().toISOString() })),
   ]);
   polling = false;
   // Keep last-good values for any endpoint that failed.
-  if (a.status === "fulfilled") snap.status = a.value;
-  if (b.status === "fulfilled") snap.settlements = b.value;
-  if (c.status === "fulfilled") snap.economy = c.value;
+  statusFresh = a.status === "fulfilled";
+  const receivedAt = new Date().toISOString();
+  if (a.status === "fulfilled") { snap.status = a.value.data; snap.fetchedAt.status = a.value.fetchedAt; }
+  if (b.status === "fulfilled") { snap.settlements = b.value.data; snap.fetchedAt.settlements = b.value.fetchedAt; }
+  if (c.status === "fulfilled") { snap.economy = c.value.data; snap.fetchedAt.economy = c.value.fetchedAt; }
   const allOk = a.status === "fulfilled" && b.status === "fulfilled" && c.status === "fulfilled";
-  if (a.status === "fulfilled" || b.status === "fulfilled" || c.status === "fulfilled") {
-    snap.savedAt = new Date().toISOString();
-    saveCache(snap);
-  }
+  if (a.status === "fulfilled" || b.status === "fulfilled" || c.status === "fulfilled") snap.savedAt = receivedAt;
   for (const r of [a, b, c]) if (r.status === "rejected") console.warn("SQUEELODY fetch failed:", r.reason && r.reason.message);
   setApiState(allOk ? "live" : "reconnecting");
-  pattern = buildPattern(snap.status, snap.settlements);
-  engine.setPattern(pattern);
+  pattern = buildPattern(snap.status, snap.settlements, snap.economy?.round ?? null, snap.roundSeeds);
+  saveCache(snap); // Persist the round's initial seed as well as last-good endpoint data.
+  if (snap.status) engine.setPattern(pattern);
   render();
 }
 
@@ -1116,6 +1153,11 @@ function flash(msg) {
 
 const listenBtn = $("btn-listen");
 listenBtn.addEventListener("click", async () => {
+  if (!snap.status) {
+    transient = false;
+    sayNow(describeMood());
+    return;
+  }
   if (engine.playing) {
     engine.stop();
     listenBtn.setAttribute("aria-pressed", "false");
@@ -1135,6 +1177,10 @@ listenBtn.addEventListener("click", async () => {
 
 $("btn-poke").addEventListener("click", async () => {
   wheel.poke();
+  if (!engine.ctx) {
+    flash("Press LISTEN to enable sound. This poke only animates the wheel on this page.");
+    return;
+  }
   try { await engine.squeak(); } catch (_) { /* no audio: the hop still shows */ }
   flash("Squeak. The poke plays only on this page; the real hamster is not disturbed.");
 });
